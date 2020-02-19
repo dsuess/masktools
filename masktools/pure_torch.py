@@ -36,13 +36,13 @@ def masknms(
     Returns
     """
     order = confidences.argsort(descending=True)
-    masks = masks[order]
+    ordered = masks[order]
     keep = []
 
-    for idx, current in enumerate(masks):
-        iou = _iou_func(current[None], masks[keep])
+    for idx, current in enumerate(ordered):
+        iou = _iou_func(current[None], ordered[keep])
 
         if not torch.any(iou >= iou_threshold):
             keep.append(idx)
 
-    return masks[keep]
+    return order[keep]

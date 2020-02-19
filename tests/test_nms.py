@@ -38,7 +38,7 @@ def create_masks(
 class Case(NamedTuple):
     masks_in: torch.Tensor
     scores: torch.Tensor
-    masks_out: torch.Tensor
+    keep: torch.Tensor
     iou_threshold: float
 
 
@@ -46,35 +46,62 @@ TEST_CASES = [
     Case(
         masks_in=create_masks([(100, 100)], [50]),
         scores=torch.Tensor([1.0]),
-        masks_out=create_masks([(100, 100)], [50]),
+        keep=[0],
         iou_threshold=0.5,
     ),
     # IOU for this case: 0.59
     Case(
         masks_in=create_masks([(100, 100), (120, 100)], [50, 50]),
         scores=torch.Tensor([1.0, 0.5]),
-        masks_out=create_masks([(100, 100)], [50]),
+        keep=[0],
         iou_threshold=0.5,
     ),
     Case(
         masks_in=create_masks([(120, 100), (100, 100)], [50, 50]),
         scores=torch.Tensor([0.5, 1.0]),
-        masks_out=create_masks([(100, 100)], [50]),
+        keep=[1],
         iou_threshold=0.5,
     ),
     Case(
         masks_in=create_masks([(100, 100), (120, 100)], [50, 50]),
         scores=torch.Tensor([1.0, 0.5]),
-        masks_out=create_masks([(100, 100), (120, 100)], [50, 50]),
+        keep=[0, 1],
         iou_threshold=0.7,
     ),
     Case(
         masks_in=create_masks([(120, 100), (100, 100)], [50, 50]),
         scores=torch.Tensor([0.5, 1.0]),
-        masks_out=create_masks([(100, 100), (120, 100)], [50, 50]),
+        keep=[1, 0],
         iou_threshold=0.7,
     ),
 ]
+
+
+def random_rectangles(size, num_rects, max_sidelen=20):
+    """
+    >>> rects, masks = random_rectangles(256, 10)
+    >>> tuple(rects.shape)
+    (10, 4)
+    >>> tuple(masks.shape)
+    (10, 256, 256)
+    >>> bool(torch.all((0 <= rects[:, 0]) * (rects[:, 2] < 256)))
+    True
+    >>> bool(torch.all((0 <= rects[:, 1]) * (rects[:, 3] < 256)))
+    True
+    >>> bool(torch.all(rects[:, 0] < rects[:, 2]))
+    True
+    >>> bool(torch.all(rects[:, 1] < rects[:, 3]))
+    True
+    """
+    # We use integer-tensor to make sure there's no issue with precision
+    xs, ys = torch.LongTensor(2, num_rects).random_(0, size - max_sidelen - 1)
+    ws, hs = torch.LongTensor(2, num_rects).random_(1, max_sidelen)
+    masks = torch.zeros(num_rects, size, size, dtype=torch.float32)
+
+    for mask, x, y, w, h in zip(masks, xs, ys, ws, hs):
+        mask[y : y + h + 1, x : x + w + 1] = 1
+
+    return torch.stack((xs, ys, xs + ws, ys + hs), dim=-1), masks
 
 
 @pt.mark.parametrize("iou_func", [pure_torch._compute_maskiou])
@@ -91,7 +118,16 @@ def test_iou(iou_func, case):
 @pt.mark.parametrize("nms_func", [pure_torch.masknms])
 @pt.mark.parametrize("case", TEST_CASES)
 def test_masknms(nms_func, case):
-    result = nms_func(
+    keep = nms_func(
         case.masks_in, case.scores, iou_threshold=case.iou_threshold
     ).numpy()
-    np.testing.assert_array_almost_equal(result, case.masks_out)
+    np.testing.assert_array_almost_equal(keep, case.keep)
+
+
+@pt.mark.parametrize("nms_func", [pure_torch.masknms])
+def test_masknms_empty(nms_func):
+    masks = torch.zeros(0, 256, 256)
+    scores = torch.zeros(0)
+    result = nms_func(masks, scores).numpy()
+    assert result.shape == (0,)
+
