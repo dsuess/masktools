@@ -1,0 +1,19 @@
+name: masktools
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - jupyter
+  - black
+  - isort
+  - mypy
+  - mypy_extensions
+  - pytest
+  - nbval
+  - pylint
+  - pytorch
+  - pillow
+  - cudatoolkit-dev
+  - pytest-benchmark
